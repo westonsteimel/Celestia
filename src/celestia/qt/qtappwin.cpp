@@ -68,6 +68,7 @@
 #ifdef THEORA
 #include "celestia/oggtheoracapture.h"
 #endif
+#include "celestia/ffmpegcapture.h"
 #endif
 
 #ifndef CONFIG_DATA_DIR
@@ -767,7 +768,8 @@ void CelestiaAppWindow::slotCaptureVideo()
 #ifdef _WIN32
             MovieCapture* movieCapture = new AVICapture();
 #else
-            MovieCapture* movieCapture = new OggTheoraCapture();
+//            MovieCapture* movieCapture = new OggTheoraCapture();
+            MovieCapture* movieCapture = new FFMPEGCapture();
             movieCapture->setAspectRatio(1, 1);
 #endif
             bool ok = movieCapture->start(saveAsName.toLatin1().data(),
