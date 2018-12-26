@@ -5,14 +5,16 @@ extern "C"
 {
 #include <libavutil/timestamp.h>
 #include <libavformat/avformat.h>
+#include <libswscale/swscale.h>
 }
 
 #include <iostream>
 #include <cmath>
+#include <GL/glew.h>
 #include <fmt/printf.h>
 
-#define STREAM_PIX_FMT    AV_PIX_FMT_YUV420P /* default pix_fmt */
 
+using namespace std;
 
 // a wrapper around a single output AVStream
 class OutputStream
@@ -33,10 +35,12 @@ class OutputStream
 
     AVStream        *st    { nullptr };
     AVFrame         *frame { nullptr };
+    AVFrame         *tmpfr { nullptr };
     AVCodecContext  *enc   { nullptr };
     AVFormatContext *oc    { nullptr };
     AVCodec         *vc    { nullptr };
     AVPacket        *pkt   { nullptr };
+    SwsContext      *swsc  { nullptr };
 
     /* pts of the next frame that will be generated */
     int64_t         next_pts { 0 };
@@ -45,15 +49,32 @@ class OutputStream
 
     bool            capturing{ false };
 
+ public:
+    static bool     registered;
+
     friend class FFMPEGCapture;
 };
+
+bool OutputStream::registered = false;
 
 bool OutputStream::init(const std::string& _filename)
 {
     filename = _filename;
 
+    if (!OutputStream::registered)
+    {
+        av_register_all();
+        OutputStream::registered = true;
+    }
+
     /* allocate the output media context */
     avformat_alloc_output_context2(&oc, nullptr, nullptr, filename.c_str());
+    if (oc == nullptr)
+        avformat_alloc_output_context2(&oc, nullptr, "mpeg", filename.c_str());
+
+    if (oc != nullptr)
+        fmt::printf("Format codec: %s\n", oc->oformat->long_name);
+
     return oc != nullptr;
 }
 
@@ -107,20 +128,29 @@ bool OutputStream::addStream(int width, int height, int frameRate)
     /* find the encoder */
     vc = avcodec_find_encoder(oc->oformat->video_codec);
     if (vc == nullptr)
+    {
+        cout << "Video codec isn't found\n";
         return false;
+    }
 
     st = avformat_new_stream(oc, nullptr);
     if (st == nullptr)
+    {
+        cout << "Unable to alloc a new stream\n";
         return false;
+    }
     st->id = oc->nb_streams-1;
 
     enc = avcodec_alloc_context3(vc);
     if (enc == nullptr)
+    {
+        cout << "Unable to alloc a new context\n";
         return false;
+    }
 
-    enc->codec_id = oc->oformat->video_codec;
+    enc->codec_id = oc->oformat->video_codec; // TODO: make selectable
 
-    enc->bit_rate  = 400000;
+    enc->bit_rate  = 400000; // TODO: make selectable
     /* Resolution must be a multiple of two. */
     enc->width     = width;
     enc->height    = height;
@@ -132,7 +162,7 @@ bool OutputStream::addStream(int width, int height, int frameRate)
     enc->time_base = st->time_base;
 
     enc->gop_size  = 12; /* emit one intra frame every twelve frames at most */
-    enc->pix_fmt   = STREAM_PIX_FMT;
+    enc->pix_fmt   = AV_PIX_FMT_YUV420P; // FIXME
 
     if (enc->codec_id == AV_CODEC_ID_MPEG1VIDEO)
     {
@@ -157,16 +187,24 @@ bool OutputStream::start()
     if ((oc->oformat->flags & AVFMT_NOFILE) == 0)
     {
         if (avio_open(&oc->pb, filename.c_str(), AVIO_FLAG_WRITE) < 0)
+        {
+            cout << "File open error\n";
             return false;
+        }
     }
 
     /* Write the stream header, if any. */
     if (avformat_write_header(oc, nullptr) < 0)
+    {
+        cout << "Failed to write header\n";
         return false;
+    }
 
-    pkt = av_packet_alloc();
-    if (pkt == nullptr)
+    if ((pkt = av_packet_alloc()) == nullptr)
+    {
+        cout << "Failed to allocate a packet\n";
         return false;
+    }
 
     return true;
 }
@@ -176,12 +214,17 @@ bool OutputStream::openVideo()
 
     /* open the codec */
     if (avcodec_open2(enc, vc, nullptr) < 0)
+    {
+        cout << "Failed to open the codec\n";
         return false;
+    }
 
     /* allocate and init a re-usable frame */
-    frame = av_frame_alloc();
-    if (frame == nullptr)
+    if ((frame = av_frame_alloc()) == nullptr)
+    {
+        cout << "Failed to allocate dest frame\n";
         return false;
+    }
 
     frame->format = enc->pix_fmt;
     frame->width  = enc->width;
@@ -189,36 +232,65 @@ bool OutputStream::openVideo()
 
     /* allocate the buffers for the frame data */
     if (av_frame_get_buffer(frame, 32) < 0)
+    {
+        cout << "Failed to allocate dest frame buffer\n";
         return false;
+    }
 
+    if (enc->pix_fmt != AV_PIX_FMT_RGB24)
+    {
+        // as we only grab a RGB24 picture, we must convert it
+        // to the codec pixel format if needed
+        swsc = sws_getContext(enc->width, enc->height, AV_PIX_FMT_RGB24,
+                              enc->width, enc->height, enc->pix_fmt,
+                              SWS_BITEXACT, nullptr, nullptr, nullptr);
+        if (swsc == nullptr)
+        {
+            cout << "Failed to allocate SWS context\n";
+            return false;
+        }
+
+        /* allocate and init a temporary frame */
+        if((tmpfr = av_frame_alloc()) == nullptr)
+        {
+            cout << "Failed to allocate temp frame\n";
+            return false;
+        }
+
+        tmpfr->format = AV_PIX_FMT_RGB24;
+        tmpfr->width  = enc->width;
+        tmpfr->height = enc->height;
+
+        /* allocate the buffers for the frame data */
+        if (av_frame_get_buffer(tmpfr, 32) < 0)
+        {
+            cout << "Failed to allocate temp frame buffer\n";
+            return false;
+        }
+    }
 
     /* copy the stream parameters to the muxer */
     if (avcodec_parameters_from_context(st->codecpar, enc) < 0)
+    {
+        cout << "Failed to copy the stream parameters to the muxer";
         return false;
+    }
 
     return true;
 }
 
-/* Prepare a dummy image. */
-static void fill_yuv_image(AVFrame *pict, int frame_index,
-                           int width, int height)
+static void captureImage(AVFrame *pict, int width, int height)
 {
-    int x, y, i;
+    // Get the dimensions of the current viewport
+    int viewport[4];
+    glGetIntegerv(GL_VIEWPORT, viewport);
 
-    i = frame_index;
+    int x = viewport[0] + (viewport[2] - width) / 2;
+    int y = viewport[1] + (viewport[3] - height) / 2;
+    glReadPixels(x, y, width, height,
+                 GL_RGB, GL_UNSIGNED_BYTE,
+                 pict->data[0]);
 
-    /* Y */
-    for (y = 0; y < height; y++)
-        for (x = 0; x < width; x++)
-            pict->data[0][y * pict->linesize[0] + x] = x + y + i * 3;
-
-    /* Cb and Cr */
-    for (y = 0; y < height / 2; y++) {
-        for (x = 0; x < width / 2; x++) {
-            pict->data[1][y * pict->linesize[1] + x] = 128 + y + i * 2;
-            pict->data[2][y * pict->linesize[2] + x] = 64 + x + i * 5;
-        }
-    }
 }
 
 /*
@@ -232,12 +304,25 @@ bool OutputStream::writeVideoFrame(bool finalize)
     /* check if we want to generate more frames */
     if (!finalize)
     {
-        /* when we pass a frame to the encoder, it may keep a reference to it
-        * internally; make sure we do not overwrite it here */
+        // when we pass a frame to the encoder, it may keep a reference to it
+        // internally; make sure we do not overwrite it here
         if (av_frame_make_writable(frame) < 0)
+        {
+            cout << "Failed to make the frame writable\n";
             return false;
+        }
 
-        fill_yuv_image(frame, next_pts, enc->width, enc->height);
+        if (enc->pix_fmt != AV_PIX_FMT_RGB24)
+        {
+            captureImage(tmpfr, enc->width, enc->height);
+
+            sws_scale(swsc, tmpfr->data, tmpfr->linesize, 0, enc->height,
+                      frame->data, frame->linesize);
+        }
+        else
+        {
+            captureImage(frame, enc->width, enc->height);
+        }
 
         frame->pts = next_pts++;
     }
@@ -246,7 +331,10 @@ bool OutputStream::writeVideoFrame(bool finalize)
 
     /* encode the image */
     if (avcodec_send_frame(enc, frame) < 0)
+    {
+        cout << "Failed to send the frame\n";
         return false;
+    }
 
     for (int ret = 0;;)
     {
@@ -262,7 +350,10 @@ bool OutputStream::writeVideoFrame(bool finalize)
         }
 
         if (ret < 0)
+        {
+            cout << "Failed to receive/unref the packet\n";
             return false;
+        }
     }
 
     return true;
@@ -287,6 +378,8 @@ OutputStream::~OutputStream()
 {
     avcodec_free_context(&enc);
     av_frame_free(&frame);
+    if (tmpfr != nullptr)
+        av_frame_free(&tmpfr);
     avformat_free_context(oc);
     av_packet_free(&pkt);
 }
@@ -347,6 +440,8 @@ bool FFMPEGCapture::end()
         return false;
 
     os->finish();
+
+    os->capturing = false;
 
     return true;
 }

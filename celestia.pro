@@ -655,7 +655,7 @@ unix {
     system(pkg-config --atleast-version 5.3 $$LUAPC):LUA_VER = 0x050300
     DEFINES += LUA_VER=$$LUA_VER
 
-    PKGCONFIG += glu $$LUAPC libpng libjpeg theora libavcodec libavutil libavformat
+    PKGCONFIG += glu $$LUAPC libpng libjpeg theora libavcodec libavutil libavformat libswscale
 }
 unix:config_fmt {
     LIBS += -Wl,-Bstatic -lfmt -Wl,-Bdynamic
