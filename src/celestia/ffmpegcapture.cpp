@@ -9,7 +9,6 @@ extern "C"
 }
 
 #include <iostream>
-#include <cmath>
 #include <GL/glew.h>
 #include <fmt/printf.h>
 
@@ -24,7 +23,7 @@ class OutputStream
     ~OutputStream();
 
     bool init(const std::string& fn);
-    bool addStream(int w, int h, int fps);
+    bool addStream(int w, int h, float fps);
     bool openVideo();
     bool start();
     bool writeVideoFrame(bool = false);
@@ -123,7 +122,7 @@ int OutputStream::writePacket()
 }
 
 /* Add an output stream. */
-bool OutputStream::addStream(int width, int height, int frameRate)
+bool OutputStream::addStream(int width, int height, float fps)
 {
     /* find the encoder */
     vc = avcodec_find_encoder(oc->oformat->video_codec);
@@ -158,9 +157,15 @@ bool OutputStream::addStream(int width, int height, int frameRate)
      * of which frame timestamps are represented. For fixed-fps content,
      * timebase should be 1/framerate and timestamp increments should be
      * identical to 1. */
-    st->time_base  = (AVRational){ 1, frameRate };
-    enc->time_base = st->time_base;
+    if (fabs(fps - (29.97)) < 1e-5)
+        st->time_base = { 100, 2997 };
+    else if (fabs(fps - (23.97)) < 1e-5)
+        st->time_base = { 100, 2397 };
+    else
+        st->time_base = { 1, (int) fps };
 
+    enc->time_base = st->time_base; // FIXME: mpeg has wrong fps returned, 11988 instead of 29.97
+    enc->framerate = { st->time_base.den, st->time_base.num };
     enc->gop_size  = 12; /* emit one intra frame every twelve frames at most */
     enc->pix_fmt   = AV_PIX_FMT_YUV420P; // FIXME
 
@@ -412,7 +417,7 @@ int FFMPEGCapture::getHeight() const
 
 float FFMPEGCapture::getFrameRate() const
 {
-    return (float) os->st->time_base.num / os->st->time_base.den;
+    return (float) os->st->time_base.den / (float) os->st->time_base.num;
 }
 
 bool FFMPEGCapture::start(const std::string& filename, int width, int height, float fps)
@@ -420,7 +425,7 @@ bool FFMPEGCapture::start(const std::string& filename, int width, int height, fl
     if (!os->init(filename))
         return false;
 
-    if (!os->addStream(width, height, round(fps + 0.5f)))
+    if (!os->addStream(width, height, fps))
         return false;
 
     if (!os->openVideo())
