@@ -32,21 +32,21 @@ class OutputStream
  private:
     int writePacket();
 
-    AVStream        *st    { nullptr };
-    AVFrame         *frame { nullptr };
-    AVFrame         *tmpfr { nullptr };
-    AVCodecContext  *enc   { nullptr };
-    AVFormatContext *oc    { nullptr };
-    AVCodec         *vc    { nullptr };
-    AVPacket        *pkt   { nullptr };
-    SwsContext      *swsc  { nullptr };
+    AVStream        *st       { nullptr };
+    AVFrame         *frame    { nullptr };
+    AVFrame         *tmpfr    { nullptr };
+    AVCodecContext  *enc      { nullptr };
+    AVFormatContext *oc       { nullptr };
+    AVCodec         *vc       { nullptr };
+    AVPacket        *pkt      { nullptr };
+    SwsContext      *swsc     { nullptr };
 
     /* pts of the next frame that will be generated */
-    int64_t         next_pts { 0 };
+    int64_t         next_pts  { 0 };
 
     std::string     filename;
-
-    bool            capturing{ false };
+    float           fps       { 0 } ;
+    bool            capturing { false };
 
  public:
     static bool     registered;
@@ -124,6 +124,8 @@ int OutputStream::writePacket()
 /* Add an output stream. */
 bool OutputStream::addStream(int width, int height, float fps)
 {
+    this->fps = fps;
+
     /* find the encoder */
     vc = avcodec_find_encoder(oc->oformat->video_codec);
     if (vc == nullptr)
@@ -417,7 +419,7 @@ int FFMPEGCapture::getHeight() const
 
 float FFMPEGCapture::getFrameRate() const
 {
-    return (float) os->st->time_base.den / (float) os->st->time_base.num;
+    return os->fps;
 }
 
 bool FFMPEGCapture::start(const std::string& filename, int width, int height, float fps)
