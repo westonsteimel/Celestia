@@ -298,6 +298,16 @@ static void captureImage(AVFrame *pict, int width, int height)
                  GL_RGB, GL_UNSIGNED_BYTE,
                  pict->data[0]);
 
+    // Read image is vertically flipped
+    int realWidth = width * 3; // 3 bytes per pixel
+    uint8_t tempLine[realWidth];
+    uint8_t *fb = pict->data[0];
+    for (int i = 0, p = realWidth * (height - 1); i < p; i += realWidth, p -= realWidth)
+    {
+        memcpy(tempLine, &fb[i],   realWidth);
+        memcpy(&fb[i],   &fb[p],   realWidth);
+        memcpy(&fb[p],   tempLine, realWidth);
+    }
 }
 
 /*
