@@ -203,16 +203,21 @@ void CelestiaAppWindow::init(const QString& qConfigFileName,
 {
     QString celestia_data_dir = QString::fromLocal8Bit(::getenv("CELESTIA_DATA_DIR"));
 
-    if (celestia_data_dir.isEmpty()) {
-        QString celestia_data_dir = CONFIG_DATA_DIR;
+    if (celestia_data_dir.isEmpty())
+    {
+        QDir::setCurrent(CONFIG_DATA_DIR);
+    }
+    else if (QDir(celestia_data_dir).isReadable())
+    {
         QDir::setCurrent(celestia_data_dir);
-    } else if (QDir(celestia_data_dir).isReadable()) {
-        QDir::setCurrent(celestia_data_dir);
-    } else {
+    }
+    else
+    {
         QMessageBox::critical(0, "Celestia",
-            _("Celestia is unable to run because the data directroy was not "
-              "found, probably due to improper installation."));
-            exit(1);
+                              _("Celestia is unable to run because the data"
+                                " directory was not found, probably due to"
+                                " improper installation."));
+        exit(1);
     }
 
     // Get the config file name
