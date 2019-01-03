@@ -49,22 +49,27 @@ class OutputStream
     bool            capturing { false };
 
  public:
+#if (LIBAVCODEC_VERSION_INT < AV_VERSION_INT(58, 10, 100)) // ffmpeg < 4.0
     static bool     registered;
-
+#endif
     friend class FFMPEGCapture;
 };
 
+#if (LIBAVCODEC_VERSION_INT < AV_VERSION_INT(58, 10, 100)) // ffmpeg < 4.0
 bool OutputStream::registered = false;
+#endif
 
 bool OutputStream::init(const std::string& _filename)
 {
     filename = _filename;
 
+#if (LIBAVCODEC_VERSION_INT < AV_VERSION_INT(58, 10, 100)) // ffmpeg < 4.0
     if (!OutputStream::registered)
     {
         av_register_all();
         OutputStream::registered = true;
     }
+#endif
 
     /* allocate the output media context */
     avformat_alloc_output_context2(&oc, nullptr, nullptr, filename.c_str());
@@ -166,7 +171,7 @@ bool OutputStream::addStream(int width, int height, float fps)
     else
         st->time_base = { 1, (int) fps };
 
-    enc->time_base = st->time_base; // FIXME: mpeg has wrong fps returned, 11988 instead of 29.97
+    enc->time_base = st->time_base;
     enc->framerate = { st->time_base.den, st->time_base.num };
     enc->gop_size  = 12; /* emit one intra frame every twelve frames at most */
     enc->pix_fmt   = AV_PIX_FMT_YUV420P; // FIXME
