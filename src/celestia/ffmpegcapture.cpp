@@ -71,13 +71,19 @@ bool OutputStream::init(const std::string& _filename)
     }
 #endif
 
+#ifndef DEBUG_VIDEO
+    av_log_set_level(AV_LOG_FATAL);
+#endif
+
     /* allocate the output media context */
     avformat_alloc_output_context2(&oc, nullptr, nullptr, filename.c_str());
     if (oc == nullptr)
-        avformat_alloc_output_context2(&oc, nullptr, "mpeg", filename.c_str());
+        avformat_alloc_output_context2(&oc, nullptr, "matroska", filename.c_str());
 
+#ifdef DEBUG_VIDEO
     if (oc != nullptr)
         fmt::printf("Format codec: %s\n", oc->oformat->long_name);
+#endif
 
     return oc != nullptr;
 }
@@ -104,6 +110,7 @@ std::string av_ts2timestr(int64_t ts, AVRational *tb)
     return s;
 }
 
+#ifdef DEBUG_VIDEO
 static void log_packet(const AVFormatContext *oc, const AVPacket *pkt)
 {
     AVRational *time_base = &oc->streams[pkt->stream_index]->time_base;
@@ -114,6 +121,7 @@ static void log_packet(const AVFormatContext *oc, const AVPacket *pkt)
            av_ts2str(pkt->duration), av_ts2timestr(pkt->duration, time_base),
            pkt->stream_index);
 }
+#endif
 
 int OutputStream::writePacket()
 {
@@ -122,7 +130,9 @@ int OutputStream::writePacket()
     pkt->stream_index = st->index;
 
     /* Write the compressed frame to the media file. */
+#ifdef DEBUG_VIDEO
     log_packet(oc, pkt);
+#endif
     return av_interleaved_write_frame(oc, pkt);
 }
 
@@ -132,7 +142,7 @@ bool OutputStream::addStream(int width, int height, float fps)
     this->fps = fps;
 
     /* find the encoder */
-    vc = avcodec_find_encoder(oc->oformat->video_codec);
+    vc = avcodec_find_encoder(/*oc->oformat->video_codec*/AV_CODEC_ID_FFVHUFF);
     if (vc == nullptr)
     {
         cout << "Video codec isn't found\n";
@@ -154,7 +164,8 @@ bool OutputStream::addStream(int width, int height, float fps)
         return false;
     }
 
-    enc->codec_id = oc->oformat->video_codec; // TODO: make selectable
+//    enc->codec_id = oc->oformat->video_codec; // TODO: make selectable
+    enc->codec_id = oc->oformat->video_codec = AV_CODEC_ID_FFVHUFF;
 
     enc->bit_rate  = 400000; // TODO: make selectable
     /* Resolution must be a multiple of two. */
@@ -166,13 +177,13 @@ bool OutputStream::addStream(int width, int height, float fps)
      * identical to 1. */
     if (fabs(fps - (29.97)) < 1e-5)
         st->time_base = { 100, 2997 };
-    else if (fabs(fps - (23.97)) < 1e-5)
-        st->time_base = { 100, 2397 };
+    else if (fabs(fps - (23.976)) < 1e-5)
+        st->time_base = { 1000, 23976 };
     else
         st->time_base = { 1, (int) fps };
 
     enc->time_base = st->time_base;
-    enc->framerate = { st->time_base.den, st->time_base.num };
+    enc->framerate = st->avg_frame_rate = { st->time_base.den, st->time_base.num };
     enc->gop_size  = 12; /* emit one intra frame every twelve frames at most */
     enc->pix_fmt   = AV_PIX_FMT_YUV420P; // FIXME
 
