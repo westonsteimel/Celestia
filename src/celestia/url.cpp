@@ -20,6 +20,7 @@
 #include <sstream>
 #include <iomanip>
 #include <utility>
+#include <cstdlib>
 #include <fmt/printf.h>
 #include "celestiacore.h"
 #include "celutil/util.h"
@@ -172,7 +173,7 @@ Url::Url(std::string  str, CelestiaCore *core):
     // version 2. Assume any URL without a version is version 1.
     if (params["ver"] != "")
     {
-        sscanf(params["ver"].c_str(), "%u", &version);
+        version = (unsigned) std::stoi(params["ver"]);
     }
     else
     {
@@ -487,23 +488,22 @@ void Url::initVersion2(std::map<std::string, std::string>& params,
                                    BigFix(params["z"]));
 
             float ow, ox, oy, oz;
-            sscanf(params["ow"].c_str(), "%f", &ow);
-            sscanf(params["ox"].c_str(), "%f", &ox);
-            sscanf(params["oy"].c_str(), "%f", &oy);
-            sscanf(params["oz"].c_str(), "%f", &oz);
+            ow = std::stof(params["ow"]);
+            ox = std::stof(params["ox"]);
+            oy = std::stof(params["oy"]);
+            oz = std::stof(params["oz"]);
 
             orientation = Quaternionf(ow, ox, oy, oz);
 
             // Intentional Fall-Through
         case Relative:
-            if (params["dist"] != "") {
-                sscanf(params["dist"].c_str(), "%lf", &distance);
-            }
-            if (params["long"] != "") {
-                sscanf(params["long"].c_str(), "%lf", &longitude);
+            if (!params["dist"].empty())
+                distance = std::stolf(sscanf(params["dist"].c_str(), "%lf", &distance);
+            if (!params["long"] != "") {
+                std::stolf(sscanf(params["long"].c_str(), "%lf", &longitude);
             }
             if (params["lat"] != "") {
-                sscanf(params["lat"].c_str(), "%lf", &latitude);
+                std::stolf(sscanf(params["lat"].c_str(), "%lf", &latitude);
             }
             if (params["select"] != "") {
                 selectedStr = params["select"];
@@ -517,14 +517,14 @@ void Url::initVersion2(std::map<std::string, std::string>& params,
                 lightTimeDelay = false;
             }
             if (params["fov"] != "") {
-                sscanf(params["fov"].c_str(), "%f", &fieldOfView);
+                std::stof(sscanf(params["fov"].c_str(), "%f", &fieldOfView);
             }
             if (params["ts"] != "") {
-                sscanf(params["ts"].c_str(), "%f", &timeScale);
+                std::stof(sscanf(params["ts"].c_str(), "%f", &timeScale);
             }
             if (params["p"] != "") {
                 int pauseInt = 0;
-                sscanf(params["p"].c_str(), "%d", &pauseInt);
+                std::stoi(sscanf(params["p"].c_str(), "%d", &pauseInt);
                 pauseState = pauseInt == 1;
             }
             break;
@@ -533,15 +533,14 @@ void Url::initVersion2(std::map<std::string, std::string>& params,
     }
 
     if (params["rf"] != "") {
-        int rf;
-        sscanf(params["rf"].c_str(), "%d", &rf);
+        int rf = std::stoi(sscanf(params["rf"].c_str(), "%d", &rf);
         renderFlags = (uint64_t) rf;
         // older celestia versions didn't know about new renderer flags
         if ((renderFlags & Renderer::ShowPlanets) != 0)
             renderFlags |= NewRenderFlags;
     }
     if (params["lm"] != "") {
-        sscanf(params["lm"].c_str(), "%d", &labelMode);
+        std::stoi(sscanf(params["lm"].c_str(), "%d", &labelMode);
     }
 
 }
